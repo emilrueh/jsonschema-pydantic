@@ -1,4 +1,4 @@
-from typing import Any, Dict, List, Optional, Type, Union
+from typing import Any, Dict, List, Optional, Type, Union, Literal
 
 from pydantic import BaseModel as BaseModelV2
 from pydantic import Field as FieldV2
@@ -36,6 +36,10 @@ def jsonschema_to_pydantic(
             ref = definitions[ref_path[-1]]
             return jsonschema_to_pydantic(ref, definitions, version=version)
 
+        if "enum" in prop:
+            enum_values = tuple(prop["enum"])
+            return Literal.__getitem__(enum_values)
+
         if "type" in prop:
             type_mapping = {
                 "string": str,
@@ -44,13 +48,13 @@ def jsonschema_to_pydantic(
                 "boolean": bool,
                 "array": List,
                 "object": Dict[str, Any],
-                "null": None,
+                "null": type(None),
             }
 
             type_ = prop["type"]
 
             if type_ == "array":
-                return List[convert_type(prop.get("items", {}))]  # noqa F821
+                return List[convert_type(prop.get("items", {}))]
             elif type_ == "object":
                 if "properties" in prop:
                     return jsonschema_to_pydantic(prop, definitions, version=version)
@@ -69,10 +73,11 @@ def jsonschema_to_pydantic(
         elif "anyOf" in prop:
             unioned_types = tuple(convert_type(sub_schema) for sub_schema in prop["anyOf"])
             return Union[unioned_types]  # type: ignore
+
         elif prop == {} or "type" not in prop:
             return Any
-        else:
-            raise ValueError(f"Unsupported schema: {prop}")
+
+        raise ValueError(f"Unsupported schema: {prop}")
 
     fields = {}
     required_fields = schema.get("required", [])
